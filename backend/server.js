@@ -13,74 +13,92 @@ import messageRoutes from "./routes/messageRoutes.js";
 const app = express();
 
 /* =======================
-   Middleware
+   ALLOWED ORIGINS
+======================= */
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://forest-wildlife-dashboard-claozgprk-prashant9128s-projects.vercel.app"
+];
+
+/* =======================
+   CORS (VERY IMPORTANT)
 ======================= */
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      process.env.FRONTEND_URL // Vercel link from .env
-    ].filter(Boolean), // Remove undefined values
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS not allowed"));
+      }
+    },
     credentials: true,
   })
 );
 
-// Body size increased (image upload support)
+/* =======================
+   MIDDLEWARES
+======================= */
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
 app.use(cookieParser());
 
 /* =======================
-   Database
+   DATABASE
 ======================= */
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ DB Connection Error:", err));
+  .catch((err) => {
+    console.error("❌ MongoDB Error:", err);
+    process.exit(1);
+  });
 
 /* =======================
-   Routes
+   ROUTES
 ======================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/observations", observationRoutes);
 app.use("/api/messages", messageRoutes);
 
 /* =======================
-   HTTP Server + Socket.io
+   HEALTH CHECK
+======================= */
+app.get("/", (req, res) => {
+  res.send("🚀 WildGuard Backend is Running");
+});
+
+/* =======================
+   HTTP + SOCKET.IO
 ======================= */
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      process.env.FRONTEND_URL
-    ].filter(Boolean),
+    origin: allowedOrigins,
     credentials: true,
   },
 });
 
-/* 🔥 MOST IMPORTANT LINE */
 app.set("io", io);
 
 /* =======================
-   Socket events
+   SOCKET EVENTS
 ======================= */
 io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
+  console.log("🟢 Socket connected:", socket.id);
 
   socket.on("disconnect", () => {
-    console.log("🔴 Client disconnected:", socket.id);
+    console.log("🔴 Socket disconnected:", socket.id);
   });
 });
 
 /* =======================
-   Start Server
+   START SERVER
 ======================= */
 const PORT = process.env.PORT || 5000;
+
 server.listen(PORT, () => {
-  console.log(`🚀 Backend running on http://localhost:${PORT}`);
+  console.log(`🚀 Backend running on port ${PORT}`);
 });

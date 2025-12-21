@@ -6,39 +6,105 @@ import { OAuth2Client } from "google-auth-library";
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const createToken = (user) =>
-  jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "1d" });
+  jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "1d" }
+  );
 
-
+/* ======================
+   REGISTER
+====================== */
 export const register = async (req, res) => {
-  const hashed = await bcrypt.hash(req.body.password, 10);
-  await User.create({ ...req.body, password: hashed });
-  res.json({ message: "Registered successfully" });
+  try {
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+
+    await User.create({
+      ...req.body,
+      password: hashedPassword,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Registered successfully",
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "An account with this email already exists.",
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
+/* ======================
+   LOGIN
+====================== */
 export const login = async (req, res) => {
-  const user = await User.findOne({ email: req.body.email });
-  if (!user) return res.status(404).json("User not found");
+  try {
+    const { email, password } = req.body;
 
-  const match = await bcrypt.compare(req.body.password, user.password);
-  if (!match) return res.status(401).json("Wrong password");
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
 
-  const token = createToken(user);
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
 
-  res.cookie("token", token, {
+    const token = createToken(user);
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,        // Render + Vercel
+      sameSite: "none",    // MUST for cross-site
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Login failed",
+    });
+  }
+};
+
+/* ======================
+   LOGOUT
+====================== */
+export const logout = (req, res) => {
+  res.clearCookie("token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    maxAge: 24 * 60 * 60 * 1000 // 1 Day
+    secure: true,
+    sameSite: "none",
   });
 
-  res.json({ user });
+  res.json({
+    success: true,
+    message: "Logged out",
+  });
 };
 
-export const logout = (req, res) => {
-  res.clearCookie("token");
-  res.json({ message: "Logged out" });
-};
-
+/* ======================
+   GOOGLE LOGIN
+====================== */
 export const googleLogin = async (req, res) => {
   const { token } = req.body;
 
@@ -53,12 +119,11 @@ export const googleLogin = async (req, res) => {
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create new user if not exists
       user = await User.create({
         username: name,
         email,
-        role: "user", // Default role
-        // No password needed
+        role: "user",
+        avatar: picture,
       });
     }
 
@@ -66,14 +131,19 @@ export const googleLogin = async (req, res) => {
 
     res.cookie("token", jwtToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-      maxAge: 24 * 60 * 60 * 1000 // 1 Day
+      secure: true,
+      sameSite: "none",
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
-    res.json({ user });
+    res.json({
+      success: true,
+      user,
+    });
   } catch (error) {
-    console.error("Google Auth Error:", error);
-    res.status(401).json({ message: "Invalid Google Token" });
+    res.status(401).json({
+      success: false,
+      message: "Invalid Google Token",
+    });
   }
 };
