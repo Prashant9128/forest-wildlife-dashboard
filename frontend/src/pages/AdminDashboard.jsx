@@ -144,7 +144,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchAdminData();
 
-    const socket = io("http://localhost:5000", {
+    const socket = io("https://forest-wildlife-dashboard.onrender.com", {
       withCredentials: true,
     });
 
